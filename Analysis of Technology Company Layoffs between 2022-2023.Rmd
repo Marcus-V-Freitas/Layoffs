@@ -1,0 +1,292 @@
+---
+title: "Analysis of Technology Company Layoffs between 2022-2023"
+output: html_document
+author: "Marcus Vinicius de Freitas Costa"
+date: "2023-05-29"
+---
+
+```{r include=FALSE}
+
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(kableExtra)
+library(knitr)
+library(skimr)
+library(dplyr)
+library(tidyverse)
+library(prophet)
+
+```
+
+![A montage of big technology company logos including Amazon, Microsoft, Google, Apple, Netflix and Meta © FT montage/Dreamstime](https://www.ft.com/__origami/service/image/v2/images/raw/https%3A%2F%2Fd1e00ek4ebabms.cloudfront.net%2Fproduction%2F0cb359cc-78c3-4dc2-ac53-60e53d246149.jpg?fit=scale-down&source=next&width=700)
+
+-----
+
+## Background
+
+The COVID-19 pandemic had a significant impact on the global economy, and many industries have been hit hard. The technology industry has not been immune to these challenges and has also been forced to make some tough decisions, including layoffs. This [Dataset](https://www.kaggle.com/datasets/salimwid/technology-company-layoffs-20222023-data) contains information on 489 technology companies that have carried out layoffs between 2022 and 2023. The objective of this analysis is to explore the data and identify any patterns or trends that may be useful for understanding the impact of the pandemic on the technology industry.
+
+-----
+
+## Data Description:
+
+* **company**: the name of the company that carried out the layoffs
+* **total_layoffs**: the total number of layoffs carried out by the company so far
+* **impacted_workforce_percentage**: the percentage of the workforce that was impacted by the layoffs (based on pre mid-2022 company size)
+* **reported_date**: the date when the first layoff or plan to layoff was announced
+* **industry**: information on the segment in which the company operates
+* **headquarter_location**: the location of the company's headquarters
+* **sources**: data sources used to gather the information
+* **status**: whether the company is public or private (IPO status)
+
+```{r echo=FALSE}
+
+tech_layoffs <- read.csv("tech_layoffs.csv")
+head(tech_layoffs) %>% 
+  kable() %>%
+  kable_styling()
+
+
+```
+
+-----
+
+## Potential Insights:
+
+- Identify which industries have been most affected by layoffs.
+- Identify which companies have carried out the most layoffs.
+- Identify whether there is a relationship between the percentage of affected workers and the size of the company.
+- Identify the distribution of layoffs by IPO.
+- Identify the months with the highest number of layoffs.
+- Identify the trend of layoffs over time.
+- Develop a predictive model to forecast future layoffs and evaluate the performance of the model.
+
+-----
+
+## Data Cleaning:
+
+The next step was to clean the data by removing any duplicates or wrong values and correcting the data types.
+
+```{r include=FALSE}
+
+check_non_numeric_values <- function(data, column) {
+  return(unique(data[!grepl("^\\d+$", data[[column]]), column]))
+}
+
+remove_non_numeric_values <- function(data, column) {
+  
+  values <- check_non_numeric_values(data, column)
+  print(values)
+  
+  data <- data[!data[[column]] %in% values, ]
+  return(data)
+}
+
+tech_layoffs <- remove_non_numeric_values(tech_layoffs, "total_layoffs")
+tech_layoffs <- remove_non_numeric_values(tech_layoffs, "impacted_workforce_percentage")
+
+```
+
+```{r include=FALSE}
+
+tech_layoffs$total_layoffs                 <- as.integer(tech_layoffs$total_layoffs)
+tech_layoffs$impacted_workforce_percentage <- as.numeric(tech_layoffs$impacted_workforce_percentage)
+tech_layoffs$reported_date                 <- as.Date(tech_layoffs$reported_date, "%m/%d/%Y")
+tech_layoffs$additional_notes <- NULL
+
+
+```
+
+-----
+
+## Descriptive statistics
+
+```{r echo=FALSE, results='asis'}
+
+labels <- c('Date', 'character','numeric')
+
+for (label in labels)
+{
+  print(tech_layoffs %>% 
+    skim() %>% 
+    yank(label) %>% 
+    kable(caption = label) %>% 
+    kable_styling())
+}
+
+
+```
+
+---
+
+## Identify which industries have been most affected by layoffs
+
+Note that among the main branches of the technology industry affected, we have one thing in common: large numbers of hirings during the Pandemic period.
+
+During the pandemic, companies in e-commerce, fintech, social media, and food delivery, for example, faced high demand for their products and services due to social distancing and quarantine measures adopted in many countries, which limited options for in-person shopping and services and increased the need for digital solutions.
+
+The ensuing economic crisis may have caused a drop in this exaggerated demand, leading to a reduction in revenue and, therefore, a need to reduce costs, including reducing staff numbers.
+
+
+
+```{r echo=FALSE}
+
+tech_layoffs %>% 
+  group_by(industry) %>% 
+  drop_na() %>% 
+  summarise(layoffs = sum(total_layoffs)) %>% 
+  mutate(industry = reorder(industry, -layoffs)) %>% 
+  arrange(-layoffs) %>% 
+  head(10) %>% 
+    ggplot(aes(x=industry, y = layoffs, fill =  industry)) +
+      geom_bar(stat= 'identity', width = 0.7) +
+      geom_text(aes(label = layoffs), vjust = -0.3) +
+      labs(title = 'industries most affected by layoffs') +
+      theme(axis.text.x = element_blank(),
+            axis.ticks.x = element_blank()) +
+      scale_x_discrete(name = "Industries") +
+      theme(plot.title = element_text(hjust = 0.5))
+```
+
+-----
+
+## Identify which companies have carried out the most layoffs
+
+
+Reinforcing our previous analysis, we see that the main verified companies, in this case Amazon, Meta, and Better.com, are also the main offenders when we analyze their industries (E-commerce, Social Media, and Fintech respectively), which demonstrates a concentration of layoff numbers in market-leading corporations in their fields and that probably hired numbers well above their daily needs.
+
+
+```{r echo=FALSE}
+
+tech_layoffs %>% 
+  group_by(company) %>% 
+  drop_na() %>% 
+  summarise(layoffs = sum(total_layoffs)) %>% 
+  mutate(company = reorder(company, layoffs)) %>% 
+  arrange(-layoffs) %>% 
+  head(10) %>% 
+    ggplot(aes(x = company, y = layoffs, fill = company)) +
+      geom_bar(stat= 'identity', position = position_stack(reverse = TRUE)) +
+      coord_flip()+
+     geom_text(aes(label = layoffs), hjust = "inward", position = position_stack(vjust = 1.22, reverse = TRUE)) +
+      labs(title = 'Companies with the highest numbers of layoffs.') +
+      scale_x_discrete(name = "Companies") +
+      theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+-----
+
+## Identify whether there is a relationship between the percentage of affected workers and the size of the company
+
+The graph clearly shows that the vast majority of companies that had large layoffs were, in a way, those with the lowest percentage of affected workers compared to their overall workforce. This helps confirm the hypothesis that larger companies may have hired too many employees for the period and although the absolute number of layoffs may be higher, the percentage of affected workers may be lower compared to smaller companies, which have a leaner workforce and were more affected by the loss of a smaller number of employees due to the current crisis. Another thing to note is the large number of companies with public IPOs present. We will analyze this further.
+
+```{r echo=FALSE}
+
+tech_layoffs %>% 
+ggplot(aes(x=impacted_workforce_percentage, y=total_layoffs, color=status, size = total_layoffs)) +
+  geom_point() +
+  labs(title = 'Relationship between the % of affected workers and the number of layoffs',
+       x = '% of affected workers',
+       y = 'layoffs',
+       color = "IPO") + 
+  scale_size(guide="none") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+-----
+
+## Identify the distribution of layoffs by IPO
+
+An explanation for the higher number of layoffs in technology companies with public IPO during the pandemic could be linked to the constant pressure for consistent and continuous growth from investors and shareholders. This can lead these companies to hire more employees than necessary to sustain the expected growth and subsequently be forced to carry out layoffs when growth is not achieved or during economic crises, while technology companies without public IPO may have more flexibility to manage their workforce and adjust their expenses according to the needs of the company, without the same pressure.
+
+```{r echo=FALSE}
+
+h_size = 2
+
+tech_layoffs %>% 
+  group_by(status) %>% 
+  summarise(layoffs = sum(total_layoffs)) %>% 
+  mutate(percentage = round(layoffs / sum(layoffs) * 100, 2)) %>% 
+  ggplot(aes(x = h_size, y = percentage, fill=status)) +
+   geom_col() +
+ geom_text(aes(label = percentage),
+            position = position_stack(vjust = 0.5)) +
+   theme(plot.title = element_text(hjust = 0.5)) +
+  coord_polar(theta = "y") +
+  xlim(c(0.2, h_size + 0.5))  + 
+  labs(title = "Distribution of layoffs by IPO") +
+   guides(fill = guide_legend(title = "IPO")) +
+   theme(panel.grid = element_blank(),
+         axis.title = element_blank(),
+         axis.ticks = element_blank(),
+         axis.text = element_blank())
+
+```
+
+-----
+
+## Identify the months with the highest number of layoffs.
+
+Generally, the months of November and January, being the end and beginning of the fiscal year respectively, are times when many companies review their budgets and business strategies for the upcoming year, including their workforce. With the seasonal decrease in activity caused by the traditional end-of-year holidays, and the economic uncertainties caused by the pandemic, the decrease in demand for products and services led to the need for cost reduction and adjustment of the workforce to the new reality.
+
+```{r echo=FALSE}
+
+tech_layoffs %>% 
+  mutate(month = month(reported_date), year = as.character(year(reported_date))) %>% 
+  group_by(year, month) %>% 
+  drop_na() %>% 
+  summarise(layoffs = sum(total_layoffs), .groups = "keep") %>% 
+    ggplot(aes(x=reorder(month,month), y = layoffs, fill = reorder(year, -layoffs))) +
+      geom_bar(stat= 'identity', width = 0.8) +
+      geom_text(aes(label = layoffs), vjust = -0.4) +
+      guides(fill = guide_legend(title = "Year")) +
+      labs(title = 'Number of layoffs per month',
+           x = 'Month',
+           y = 'Total of layoffs')+
+      theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+## Identify trend of layoffs for the next 12 months
+
+We can confirm that the majority of layoffs were concentrated below 5000, with the trend indicating that this number will remain close to that level in the next 12 months. There are several reasons that could explain this, such as the adoption of cost-cutting strategies, reduction of operational expenses, contract renegotiation, and adjustments in investments. These actions allow organizations to navigate the crisis in a more balanced manner, avoiding mass layoffs.
+
+However, it is important to highlight the cases above 5000 employees that were observed. These situations often involved companies that experienced rapid growth during the pandemic, especially those related to technology, online services, and e-commerce. These organizations made large-scale hires to meet the increasing demand, but as the situation stabilized, they needed to make internal adjustments and reorganizations, resulting in a high number of layoffs.
+
+```{r echo=FALSE}
+
+layoffs_by_day <- tech_layoffs %>%
+                      mutate(ds = floor_date(reported_date, unit = "day")) %>%
+                      group_by(ds) %>%
+                      summarise(y = sum(total_layoffs)) 
+
+model <- prophet(layoffs_by_day, 
+                 yearly.seasonality = FALSE, 
+                 weekly.seasonality = FALSE, 
+                 daily.seasonality = FALSE,
+                 n.changepoints = 9)
+
+future <- make_future_dataframe(model, 
+                                periods = 12, 
+                                freq = 'month',
+                                include_history = TRUE)
+
+forecast <- predict(model, future)
+
+plot(model, forecast) +
+  labs(x = "Period", y = "Total of layoffs", title = "Forecast of layoffs for the next 12 months") +  
+  geom_point(data = layoffs_by_day, aes(x = as.POSIXct(ds), y = y), color = "black") +  
+  geom_line(aes(y = yhat), color = "red") +  
+  geom_ribbon(aes(ymin = yhat_lower, ymax = yhat_upper), fill = "gray", alpha = 0.3) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+## Conclusion
+
+In conclusion, the analysis of the dataset of technology companies layoffs during the COVID-19 pandemic revealed valuable insights into the impacts faced by the sector in this unprecedented period through the use of the R programming language.
+
+These were just some of the possibilities that exist for visual and interpretive analyzes in this dataset. Many other insights can still be discovered and extracted.
